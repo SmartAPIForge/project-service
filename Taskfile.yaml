@@ -1,0 +1,32 @@
+version: '3'
+
+# launch:
+# > task init
+tasks:
+  run:
+    desc: "Build & Run"
+    deps:
+      - build
+    cmds:
+      - ./main
+
+  build:
+    desc: "Build"
+    cmds:
+      - go build ./cmd/project-service/main.go
+
+  env_raise:
+    desc: "Raise environment in containers"
+    cmds:
+      - docker compose up -d
+
+  init:
+    desc: "Init"
+    cmds:
+      - go mod tidy
+      - task sequential_deps
+
+  sequential_deps:
+    cmds:
+      - task redis_raise
+      - task run

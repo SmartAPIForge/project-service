@@ -1,0 +1,8 @@
+services:
+  mongo:
+    container_name: project-mongo
+    volumes:
+      - project_mongo_data:/data
+
+volumes:
+  project_mongo_data:
