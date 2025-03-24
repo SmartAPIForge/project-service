@@ -1,18 +1,18 @@
 package kafka
 
 import (
+	"fmt"
 	"github.com/confluentinc/confluent-kafka-go/kafka"
-	"github.com/linkedin/goavro/v2"
 	"log/slog"
 	"project-service/internal/config"
 	projectservice "project-service/internal/services/project"
-	"sync"
 )
 
+var topics = []string{"ProjectStatus"}
+
 type KafkaConsumer struct {
-	consumer       *kafka.Consumer
 	log            *slog.Logger
-	topics         []string
+	consumer       *kafka.Consumer
 	projectService *projectservice.ProjectService
 }
 
@@ -22,69 +22,45 @@ func NewKafkaConsumer(
 	schemaManager *SchemaManager,
 	projectService *projectservice.ProjectService,
 ) *KafkaConsumer {
-	consumer, err := kafka.NewConsumer(&kafka.ConfigMap{"bootstrap.servers": cfg.KafkaHost})
+	consumer, err := kafka.NewConsumer(&kafka.ConfigMap{
+		"bootstrap.servers": cfg.KafkaHost,
+		"group.id":          "project-service-group",
+	})
 	if err != nil {
-		panic("Error creating kafka consumer")
+		panic(fmt.Sprintf("Error creating kafka consumer %v", err))
 	}
 
 	return &KafkaConsumer{
 		consumer:       consumer,
-		topics:         getTopics(schemaManager.schemas),
 		log:            log,
 		projectService: projectService,
 	}
 }
 
 func (kc *KafkaConsumer) InitConsumer() {
-	err := kc.consumer.SubscribeTopics(kc.topics, nil)
+	err := kc.consumer.SubscribeTopics(topics, nil)
 	if err != nil {
 		kc.log.Error("Error subscribing to topics", err)
 		return
 	}
 
-	var wg sync.WaitGroup
-
-	for _, topic := range kc.topics {
-		wg.Add(1)
-
-		go func(t string) {
-			defer wg.Done()
-			switch t {
-			case "ProjectStatus":
-				kc.consumeProjectStatus()
-				break
-			default:
-				kc.log.Error("SchemaManager provided unknown topic %s", t)
-			}
-		}(topic)
-	}
-
-	wg.Wait()
+	go func() {
+		kc.consumeProjectStatus()
+	}()
 }
 
-// ProjectStatus topic
 func (kc *KafkaConsumer) consumeProjectStatus() {
 	kc.log.Info("Started consuming ProjectStatus")
 
 	for {
 		msg, err := kc.consumer.ReadMessage(-1)
 		if err != nil {
-			kc.log.Error("Error reading from topic ProjectStatus: %v", err)
+			kc.log.Error("Error reading from topic ProjectStatus:", err)
 			continue
 		}
 
-		kc.log.Info("New message from topic ProjectStatus: %s", string(msg.Value))
+		kc.log.Info("New message from topic ProjectStatus:", string(msg.Value))
 
 		// TODO LOGIC
 	}
-}
-
-func getTopics(codecs map[string]*goavro.Codec) []string {
-	topics := make([]string, 0, len(codecs))
-
-	for topic := range codecs {
-		topics = append(topics, topic)
-	}
-
-	return topics
 }
