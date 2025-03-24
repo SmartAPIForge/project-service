@@ -1,8 +1,10 @@
 package codegenservice
 
 import (
+	"fmt"
 	"log/slog"
 	"project-service/internal/domain/models"
+	"project-service/internal/dto"
 	"project-service/internal/repository/project"
 )
 
@@ -60,9 +62,8 @@ func (*ProjectService) GetProjectStatus(
 }
 
 func (*ProjectService) UpdateProjectStatus(
-	owner string,
-	name string,
-	status string,
-) (string, error) {
-	return "nil", nil
+	dto dto.ProjectStatusDTO,
+) (bool, error) {
+	fmt.Println(dto)
+	return true, nil
 }

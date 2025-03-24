@@ -9,19 +9,20 @@ import (
 	"sync"
 )
 
+// topic -> codec
 var schemasForThisService = map[string]*goavro.Codec{
 	"ProjectStatus": nil,
 }
 
 type SchemaManager struct {
 	mu                sync.RWMutex
-	schemas           map[string]*goavro.Codec
+	Schemas           map[string]*goavro.Codec
 	schemaRegistryURL string
 }
 
 func NewSchemaManager(cfg *config.Config) *SchemaManager {
 	manager := &SchemaManager{
-		schemas:           schemasForThisService,
+		Schemas:           schemasForThisService,
 		schemaRegistryURL: cfg.SchemaRegistryUrl,
 	}
 
@@ -34,7 +35,7 @@ func (sm *SchemaManager) loadSchemasFromRegistry() {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 
-	for topic := range sm.schemas {
+	for topic := range sm.Schemas {
 		schemaData, err := sm.fetchSchemaFromRegistry(topic)
 		if err != nil {
 			panic(fmt.Sprintf("Failed to load schema for topic %s: %v", topic, err))
@@ -45,7 +46,7 @@ func (sm *SchemaManager) loadSchemasFromRegistry() {
 			panic(fmt.Sprintf("Failed to create codec for topic %s: %v", topic, err))
 		}
 
-		sm.schemas[topic] = codec
+		sm.Schemas[topic] = codec
 		fmt.Printf("Schema for topic %s successfully loaded from registry\n", topic)
 	}
 }

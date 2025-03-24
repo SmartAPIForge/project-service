@@ -10,6 +10,8 @@ import (
 	"project-service/internal/kafka"
 	"project-service/internal/repository/project"
 	projectservice "project-service/internal/services/project"
+	"runtime/debug"
+	"time"
 )
 
 type App struct {
@@ -30,13 +32,26 @@ func NewApp(
 	projectService := projectservice.NewProjectService(log, projectRepository)
 
 	schemaManager := kafka.NewSchemaManager(cfg)
-	kafkaConsumer := kafka.NewKafkaConsumer(
-		cfg,
-		log,
-		schemaManager,
-		projectService,
-	)
-	kafkaConsumer.InitConsumer()
+	for topic, codec := range schemaManager.Schemas {
+		consumer := kafka.NewKafkaConsumer(log, cfg, topic, codec, projectService)
+		consumer.Sub()
+		go func(consumer *kafka.KafkaConsumer) {
+			for {
+				func() {
+					defer func() {
+						if r := recover(); r != nil {
+							log.Error("Panic in consumer, restarting...",
+								"panic", r,
+								"stack", string(debug.Stack()))
+						}
+					}()
+					consumer.Consume()
+				}()
+				time.Sleep(5 * time.Second)
+				consumer.Sub()
+			}
+		}(consumer)
+	}
 
 	grpcApp := grpcapp.NewGrpcApp(
 		log,

@@ -3,50 +3,60 @@ package kafka
 import (
 	"fmt"
 	"github.com/confluentinc/confluent-kafka-go/kafka"
+	"github.com/linkedin/goavro/v2"
 	"log/slog"
 	"project-service/internal/config"
+	"project-service/internal/dto"
 	projectservice "project-service/internal/services/project"
 )
-
-var topics = []string{"ProjectStatus"}
 
 type KafkaConsumer struct {
 	log            *slog.Logger
 	consumer       *kafka.Consumer
+	topic          string
+	codec          *goavro.Codec
 	projectService *projectservice.ProjectService
 }
 
 func NewKafkaConsumer(
-	cfg *config.Config,
 	log *slog.Logger,
-	schemaManager *SchemaManager,
+	cfg *config.Config,
+	topic string,
+	codec *goavro.Codec,
 	projectService *projectservice.ProjectService,
 ) *KafkaConsumer {
 	consumer, err := kafka.NewConsumer(&kafka.ConfigMap{
-		"bootstrap.servers": cfg.KafkaHost,
-		"group.id":          "project-service-group",
+		"bootstrap.servers":  cfg.KafkaHost,
+		"group.id":           "project-psg",
+		"enable.auto.commit": false,
 	})
 	if err != nil {
 		panic(fmt.Sprintf("Error creating kafka consumer %v", err))
 	}
 
 	return &KafkaConsumer{
-		consumer:       consumer,
 		log:            log,
+		consumer:       consumer,
+		topic:          topic,
+		codec:          codec,
 		projectService: projectService,
 	}
 }
 
-func (kc *KafkaConsumer) InitConsumer() {
-	err := kc.consumer.SubscribeTopics(topics, nil)
+func (kc *KafkaConsumer) Sub() {
+	err := kc.consumer.Subscribe(kc.topic, nil)
 	if err != nil {
-		kc.log.Error("Error subscribing to topics", err)
-		return
+		kc.log.Error("Error subscribing to topic: ", kc.topic, err)
 	}
+}
 
-	go func() {
+// Consume > ~1 minute wait for assigning
+func (kc *KafkaConsumer) Consume() {
+	switch kc.topic {
+	case "ProjectStatus":
 		kc.consumeProjectStatus()
-	}()
+		break
+	}
 }
 
 func (kc *KafkaConsumer) consumeProjectStatus() {
@@ -59,8 +69,33 @@ func (kc *KafkaConsumer) consumeProjectStatus() {
 			continue
 		}
 
-		kc.log.Info("New message from topic ProjectStatus:", string(msg.Value))
+		kc.log.Info("New message from topic ProjectStatus")
 
-		// TODO LOGIC
+		native, _, err := kc.codec.NativeFromTextual(msg.Value)
+		if err != nil {
+			kc.log.Error("Incorrect message while handling ProjectStatus:", string(msg.Value), err)
+			kc.commitMessage(msg)
+			continue
+		}
+
+		projectStatusDTO := dto.MapNativeToProjectStatusDTO(native)
+		canCommit, err := kc.projectService.UpdateProjectStatus(projectStatusDTO)
+
+		if canCommit {
+			kc.commitMessage(msg)
+		}
+	}
+}
+
+func (kc *KafkaConsumer) commitMessage(msg *kafka.Message) {
+	_, err := kc.consumer.CommitMessage(msg)
+	if err != nil {
+		kc.log.Error(
+			"Failed to commit message",
+			"topic", *msg.TopicPartition.Topic,
+			"partition", msg.TopicPartition.Partition,
+			"offset", msg.TopicPartition.Offset,
+			"error", err,
+		)
 	}
 }
