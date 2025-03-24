@@ -1,9 +1,0 @@
-{
-  "type": "record",
-  "name": "ProjectStatus",
-  "namespace": "com.smartapiforge",
-  "fields": [
-    { "name": "id", "type": "string" },
-    { "name": "status", "type": "string" },
-  ]
-}

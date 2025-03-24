@@ -28,5 +28,5 @@ tasks:
 
   sequential_deps:
     cmds:
-      - task redis_raise
+      - task env_raise
       - task run
