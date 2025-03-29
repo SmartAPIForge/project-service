@@ -1,6 +1,7 @@
 package kafka
 
 import (
+	"context"
 	"fmt"
 	"github.com/confluentinc/confluent-kafka-go/kafka"
 	"github.com/linkedin/goavro/v2"
@@ -79,7 +80,8 @@ func (kc *KafkaConsumer) consumeProjectStatus() {
 		}
 
 		projectStatusDTO := dto.MapNativeToProjectStatusDTO(native)
-		canCommit, err := kc.projectService.UpdateProjectStatus(projectStatusDTO)
+		ctx := context.Background()
+		canCommit, err := kc.projectService.UpdateProjectStatus(ctx, projectStatusDTO)
 
 		if canCommit {
 			kc.commitMessage(msg)
