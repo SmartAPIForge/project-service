@@ -5,7 +5,6 @@ type ProjectStatusDTO struct {
 	Status string
 }
 
-// MapNativeToProjectStatusDTO should get only native data checked by avro codec!
 func MapNativeToProjectStatusDTO(native interface{}) ProjectStatusDTO {
 	nativeMap, _ := native.(map[string]interface{})
 

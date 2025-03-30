@@ -2,7 +2,6 @@ package codegenservice
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -15,7 +14,7 @@ type ProjectRepository interface {
 	GetProjectByID(ctx context.Context, id project.ProjectUniqueIdentifier) (*project.Project, error)
 	GetAllUserProjects(ctx context.Context, owner string, page, limit int64) ([]*project.Project, error)
 	InitProject(ctx context.Context, id project.ProjectUniqueIdentifier) (*project.Project, error)
-	UpdateProject(ctx context.Context, id project.ProjectUniqueIdentifier, data map[string]interface{}) (*project.Project, error)
+	UpdateProject(ctx context.Context, id project.ProjectUniqueIdentifier, data string) (*project.Project, error)
 	UpdateProjectStatus(ctx context.Context, id project.ProjectUniqueIdentifier, status project.ProjectStatus) error
 }
 
@@ -34,7 +33,6 @@ func NewProjectService(
 	}
 }
 
-// GetUniqueUserProject получает уникальный проект пользователя
 func (s *ProjectService) GetUniqueUserProject(
 	ctx context.Context,
 	owner string,
@@ -58,7 +56,6 @@ func (s *ProjectService) GetUniqueUserProject(
 	return mapProjectEntityToModel(projectEntity), nil
 }
 
-// GetAllUserProjects получает все проекты пользователя с пагинацией
 func (s *ProjectService) GetAllUserProjects(
 	ctx context.Context,
 	owner string,
@@ -78,7 +75,6 @@ func (s *ProjectService) GetAllUserProjects(
 	return projects, nil
 }
 
-// InitProject инициализирует новый проект
 func (s *ProjectService) InitProject(
 	ctx context.Context,
 	owner string,
@@ -99,19 +95,17 @@ func (s *ProjectService) InitProject(
 	return mapProjectEntityToModel(projectEntity), nil
 }
 
-// UpdateProject обновляет данные проекта
 func (s *ProjectService) UpdateProject(
 	ctx context.Context,
 	owner string,
 	name string,
-	data map[string]interface{},
+	data string,
 ) (*models.Project, error) {
 	id := project.ProjectUniqueIdentifier{
 		Owner: owner,
 		Name:  name,
 	}
 
-	// Обновляем проект
 	projectEntity, err := s.projectRepository.UpdateProject(ctx, id, data)
 	if err != nil {
 		s.log.Error("ошибка при обновлении проекта", "error", err)
@@ -121,7 +115,6 @@ func (s *ProjectService) UpdateProject(
 	return mapProjectEntityToModel(projectEntity), nil
 }
 
-// GetProjectStatus получает статус проекта
 func (s *ProjectService) GetProjectStatus(
 	ctx context.Context,
 	owner string,
@@ -145,12 +138,10 @@ func (s *ProjectService) GetProjectStatus(
 	return mapStatusToString(projectEntity.Status), nil
 }
 
-// UpdateProjectStatus обновляет статус проекта
 func (s *ProjectService) UpdateProjectStatus(
 	ctx context.Context,
 	dto dto.ProjectStatusDTO,
 ) (bool, error) {
-	// Парсим ID из DTO
 	parts := dto.Id
 	if parts == "" {
 		return false, errors.New("некорректный ID проекта")
@@ -162,13 +153,11 @@ func (s *ProjectService) UpdateProjectStatus(
 		Name:  name,
 	}
 
-	// Конвертируем строковый статус в ProjectStatus
 	status, err := parseStatusFromString(dto.Status)
 	if err != nil {
 		return false, err
 	}
 
-	// Обновляем статус
 	err = s.projectRepository.UpdateProjectStatus(ctx, id, status)
 	if err != nil {
 		s.log.Error("ошибка при обновлении статуса проекта", "error", err)
@@ -178,22 +167,16 @@ func (s *ProjectService) UpdateProjectStatus(
 	return true, nil
 }
 
-// Вспомогательные функции
-
-// mapProjectEntityToModel конвертирует сущность проекта в модель
 func mapProjectEntityToModel(entity *project.Project) *models.Project {
-	// Конвертируем данные проекта в JSON
-	data, _ := json.Marshal(entity.Data)
 
 	return &models.Project{
 		Owner:  entity.ComposeID.Owner,
 		Name:   entity.ComposeID.Name,
 		Status: mapStatusToString(entity.Status),
-		Data:   data,
+		Data:   entity.Data,
 	}
 }
 
-// mapStatusToString конвертирует статус в строку
 func mapStatusToString(status project.ProjectStatus) string {
 	switch status {
 	case project.NEW:
@@ -221,7 +204,6 @@ func mapStatusToString(status project.ProjectStatus) string {
 	}
 }
 
-// parseStatusFromString конвертирует строку в статус
 func parseStatusFromString(statusStr string) (project.ProjectStatus, error) {
 	switch statusStr {
 	case "NEW":
@@ -249,11 +231,7 @@ func parseStatusFromString(statusStr string) (project.ProjectStatus, error) {
 	}
 }
 
-// parseProjectID разбирает ID проекта на owner и name
 func parseProjectID(id string) (owner, name string) {
-	// Логика парсинга ID должна быть реализована согласно формату хранения
-	// Например, если ID хранится в формате "owner/name"
-	// В данном случае, предполагается, что ID уже содержит owner и name
 	// TODO: Реализовать корректный парсинг ID
 	return id, id
 }

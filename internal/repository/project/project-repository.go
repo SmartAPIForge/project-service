@@ -19,22 +19,22 @@ type ProjectUniqueIdentifier struct {
 type ProjectStatus int
 
 const (
-	NEW ProjectStatus = iota
-	GENERATE_PENDING = 2
-	GENERATE_SUCCESS = 3
-	GENERATE_FAIL    = 4
-	DEPLOY_PENDING   = 5
-	DEPLOY_SUCCESS   = 6
-	DEPLOY_FAIL      = 7
-	RUNNING          = 8
-	STOPPED          = 9
-	FAILED           = 10
+	NEW              ProjectStatus = iota
+	GENERATE_PENDING               = 2
+	GENERATE_SUCCESS               = 3
+	GENERATE_FAIL                  = 4
+	DEPLOY_PENDING                 = 5
+	DEPLOY_SUCCESS                 = 6
+	DEPLOY_FAIL                    = 7
+	RUNNING                        = 8
+	STOPPED                        = 9
+	FAILED                         = 10
 )
 
 // Project представляет структуру проекта в базе данных
 type Project struct {
 	ComposeID ProjectUniqueIdentifier `bson:"compose_id"`
-	Data      map[string]interface{}  `bson:"data,omitempty"`
+	Data      string                  `bson:"data,omitempty"`
 	Status    ProjectStatus           `bson:"status"`
 }
 
@@ -79,29 +79,28 @@ func (r *ProjectRepository) GetProjectByID(ctx context.Context, id ProjectUnique
 // GetAllUserProjects получает все проекты пользователя с пагинацией
 func (r *ProjectRepository) GetAllUserProjects(ctx context.Context, owner string, page, limit int64) ([]*Project, error) {
 	filter := bson.M{"compose_id.owner": owner}
-	
+
 	options := options.Find().
 		SetSkip((page - 1) * limit).
 		SetLimit(limit).
 		SetSort(bson.M{"compose_id.name": 1})
-	
+
 	cursor, err := r.collection.Find(ctx, filter, options)
 	if err != nil {
 		return nil, err
 	}
 	defer cursor.Close(ctx)
-	
+
 	var projects []*Project
 	if err := cursor.All(ctx, &projects); err != nil {
 		return nil, err
 	}
-	
+
 	return projects, nil
 }
 
 // InitProject инициализирует новый проект
 func (r *ProjectRepository) InitProject(ctx context.Context, id ProjectUniqueIdentifier) (*Project, error) {
-	// Проверяем, что проект с таким идентификатором не существует
 	existingProject, err := r.GetProjectByID(ctx, id)
 	if err != nil {
 		return nil, err
@@ -109,24 +108,23 @@ func (r *ProjectRepository) InitProject(ctx context.Context, id ProjectUniqueIde
 	if existingProject != nil {
 		return nil, errors.New("проект с таким названием уже существует для данного пользователя")
 	}
-	
-	// Создаем новый проект
+
 	project := &Project{
 		ComposeID: id,
 		Status:    NEW,
-		Data:      make(map[string]interface{}),
+		Data:      "",
 	}
-	
+
 	_, err = r.collection.InsertOne(ctx, project)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	return project, nil
 }
 
 // UpdateProject обновляет данные проекта
-func (r *ProjectRepository) UpdateProject(ctx context.Context, id ProjectUniqueIdentifier, data map[string]interface{}) (*Project, error) {
+func (r *ProjectRepository) UpdateProject(ctx context.Context, id ProjectUniqueIdentifier, data string) (*Project, error) {
 	// Проверяем, что проект существует
 	existingProject, err := r.GetProjectByID(ctx, id)
 	if err != nil {
@@ -135,20 +133,20 @@ func (r *ProjectRepository) UpdateProject(ctx context.Context, id ProjectUniqueI
 	if existingProject == nil {
 		return nil, errors.New("проект не найден")
 	}
-	
+
 	// Обновляем данные проекта
 	update := bson.M{
 		"$set": bson.M{
 			"data": data,
 		},
 	}
-	
+
 	filter := bson.M{"compose_id": bson.M{"owner": id.Owner, "name": id.Name}}
 	_, err = r.collection.UpdateOne(ctx, filter, update)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Получаем обновленный проект
 	return r.GetProjectByID(ctx, id)
 }
@@ -161,7 +159,7 @@ func (r *ProjectRepository) UpdateProjectStatus(ctx context.Context, id ProjectU
 			"status": status,
 		},
 	}
-	
+
 	_, err := r.collection.UpdateOne(ctx, filter, update)
 	return err
 }

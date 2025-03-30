@@ -3,14 +3,13 @@ module project-service
 go 1.23.4
 
 require (
-	github.com/SmartAPIForge/protos v1.5.3
+	github.com/SmartAPIForge/protos v1.5.4
 	github.com/confluentinc/confluent-kafka-go v1.9.2
 	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.3.1
 	github.com/joho/godotenv v1.5.1
 	github.com/linkedin/goavro/v2 v2.13.1
 	go.mongodb.org/mongo-driver v1.17.3
 	google.golang.org/grpc v1.69.4
-	google.golang.org/protobuf v1.36.4
 )
 
 require (
@@ -27,4 +26,5 @@ require (
 	golang.org/x/sys v0.30.0 // indirect
 	golang.org/x/text v0.22.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250115164207-1a7da9e5054f // indirect
+	google.golang.org/protobuf v1.36.4 // indirect
 )
