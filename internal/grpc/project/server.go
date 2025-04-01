@@ -17,6 +17,11 @@ type ProjectService interface {
 		owner string,
 		page, limit int64,
 	) ([]*models.Project, error)
+	GetFilteredProjects(
+		ctx context.Context,
+		owner, status, namePrefix string,
+		page, limit int64,
+	) ([]*models.Project, error)
 	InitProject(
 		ctx context.Context,
 		owner string,
@@ -28,6 +33,11 @@ type ProjectService interface {
 		name string,
 		data string,
 	) (*models.Project, error)
+	DeleteProject(
+		ctx context.Context,
+		owner string,
+		name string,
+	) error
 }
 
 type ProjectServer struct {
@@ -73,6 +83,53 @@ func (s *ProjectServer) GetAllUserProjects(
 	}
 
 	projects, err := s.projectService.GetAllUserProjects(ctx, in.Owner, page, limit)
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	protoProjects := make([]*projectProto.ProjectResponse, 0, len(projects))
+	for _, proj := range projects {
+		protoProj, err := projectToResponse(proj)
+		if err != nil {
+			return nil, status.Error(codes.Internal, err.Error())
+		}
+		protoProjects = append(protoProjects, protoProj)
+	}
+
+	return &projectProto.ListOfProjectsResponse{
+		Projects: protoProjects,
+	}, nil
+}
+
+func (s *ProjectServer) GetFilteredProjects(
+	ctx context.Context,
+	in *projectProto.GetFilteredProjectsRequest,
+) (*projectProto.ListOfProjectsResponse, error) {
+	page := int64(1)
+	limit := int64(10)
+
+	if in.Page != "" {
+		parsedPage, err := strconv.ParseInt(in.Page, 10, 64)
+		if err == nil && parsedPage > 0 {
+			page = parsedPage
+		}
+	}
+
+	if in.Limit != "" {
+		parsedLimit, err := strconv.ParseInt(in.Limit, 10, 64)
+		if err == nil && parsedLimit > 0 {
+			limit = parsedLimit
+		}
+	}
+
+	projects, err := s.projectService.GetFilteredProjects(
+		ctx,
+		in.Owner,
+		in.Status,
+		in.NamePrefix,
+		page,
+		limit,
+	)
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
@@ -149,6 +206,24 @@ func (s *ProjectServer) UpdateProject(
 	}
 
 	return projectToResponse(project)
+}
+
+func (s *ProjectServer) DeleteProject(
+	ctx context.Context,
+	in *projectProto.ProjectUniqueIdentifier,
+) (*projectProto.DeleteProjectResponse, error) {
+	if in.Owner == "" || in.Name == "" {
+		return nil, status.Error(codes.InvalidArgument, "не указаны владелец или имя проекта")
+	}
+
+	err := s.projectService.DeleteProject(ctx, in.Owner, in.Name)
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	return &projectProto.DeleteProjectResponse{
+		Success: true,
+	}, nil
 }
 
 func projectToResponse(project *models.Project) (*projectProto.ProjectResponse, error) {

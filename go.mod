@@ -3,7 +3,7 @@ module project-service
 go 1.23.4
 
 require (
-	github.com/SmartAPIForge/protos v1.6.1
+	github.com/SmartAPIForge/protos v1.7.0
 	github.com/confluentinc/confluent-kafka-go v1.9.2
 	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.3.1
 	github.com/joho/godotenv v1.5.1

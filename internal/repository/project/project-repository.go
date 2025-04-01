@@ -42,6 +42,55 @@ func (r *ProjectRepository) GetAllUserProjects(ctx context.Context, owner string
 	return projects, nil
 }
 
+func (r *ProjectRepository) GetFilteredProjects(ctx context.Context, owner, status, namePrefix string, page, limit int64) ([]*models.Project, error) {
+	filter := bson.M{}
+
+	if owner != "" {
+		filter["owner"] = owner
+	}
+
+	if status != "" {
+		filter["status"] = status
+	}
+
+	if namePrefix != "" {
+		filter["name"] = bson.M{"$regex": "^" + namePrefix, "$options": "i"}
+	}
+
+	opts := options.Find().
+		SetSkip((page - 1) * limit).
+		SetLimit(limit).
+		SetSort(bson.M{"createdAt": -1})
+
+	cursor, err := r.collection.Find(ctx, filter, opts)
+	if err != nil {
+		return nil, err
+	}
+	defer func(cursor *mongo.Cursor, ctx context.Context) {
+		_ = cursor.Close(ctx)
+	}(cursor, ctx)
+
+	var projects []*models.Project
+	if err := cursor.All(ctx, &projects); err != nil {
+		return nil, err
+	}
+
+	return projects, nil
+}
+
+func (r *ProjectRepository) DeleteProject(ctx context.Context, composeId string) error {
+	result, err := r.collection.DeleteOne(ctx, bson.M{"composeId": composeId})
+	if err != nil {
+		return err
+	}
+
+	if result.DeletedCount == 0 {
+		return errors.New("проект не найден")
+	}
+
+	return nil
+}
+
 func (r *ProjectRepository) InitProject(ctx context.Context, composeId, owner, name string) (*models.Project, error) {
 	existingProject, err := r.getProjectByComposeId(ctx, composeId)
 	if err != nil {
