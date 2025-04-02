@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"net"
 	projectserver "project-service/internal/grpc/project"
+	projectservice "project-service/internal/services/project"
 )
 
 type GrpcApp struct {
@@ -19,7 +20,7 @@ type GrpcApp struct {
 	port       int
 }
 
-func NewGrpcApp(log *slog.Logger, projectService projectserver.ProjectService, port int) *GrpcApp {
+func NewGrpcApp(log *slog.Logger, projectService projectserver.ProjectService, port int, projectUpdater *projectservice.ProjectUpdater) *GrpcApp {
 	loggingOpts := []logging.Option{
 		logging.WithLogOnEvents(
 			logging.PayloadReceived, logging.PayloadSent,
@@ -41,7 +42,7 @@ func NewGrpcApp(log *slog.Logger, projectService projectserver.ProjectService, p
 		),
 	))
 
-	projectserver.RegisterProjectServer(gRPCServer, projectService)
+	projectserver.RegisterProjectServer(gRPCServer, projectService, projectUpdater)
 
 	return &GrpcApp{
 		log:        log,

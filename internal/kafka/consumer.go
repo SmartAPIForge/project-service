@@ -1,6 +1,7 @@
 package kafka
 
 import (
+	"context"
 	"fmt"
 	"github.com/confluentinc/confluent-kafka-go/kafka"
 	"github.com/linkedin/goavro/v2"
@@ -56,6 +57,12 @@ func (kc *KafkaConsumer) Consume() {
 	case "ProjectStatus":
 		kc.consumeProjectStatus()
 		break
+	case "NewZip":
+		kc.consumeProjectNewZip()
+		break
+	case "DeployPayload":
+		kc.consumeDeployPayload()
+		break
 	}
 }
 
@@ -79,8 +86,61 @@ func (kc *KafkaConsumer) consumeProjectStatus() {
 		}
 
 		projectStatusDTO := dto.MapNativeToProjectStatusDTO(native)
-		canCommit, err := kc.projectService.UpdateProjectStatus(projectStatusDTO)
+		canCommit, _ := kc.projectService.UpdateProjectStatus(context.Background(), projectStatusDTO)
+		if canCommit {
+			kc.commitMessage(msg)
+		}
+	}
+}
 
+func (kc *KafkaConsumer) consumeProjectNewZip() {
+	kc.log.Info("Started consuming NewZip")
+
+	for {
+		msg, err := kc.consumer.ReadMessage(-1)
+		if err != nil {
+			kc.log.Error("Error reading from topic NewZip:", err)
+			continue
+		}
+
+		kc.log.Info("New message from topic NewZip")
+
+		native, _, err := kc.codec.NativeFromTextual(msg.Value)
+		if err != nil {
+			kc.log.Error("Incorrect message while handling NewZip:", string(msg.Value), err)
+			kc.commitMessage(msg)
+			continue
+		}
+
+		newZipDTO := dto.MapNativeToNewZipDTO(native)
+		canCommit, _ := kc.projectService.UpdateProjectUrlZip(context.Background(), newZipDTO)
+		if canCommit {
+			kc.commitMessage(msg)
+		}
+	}
+}
+
+func (kc *KafkaConsumer) consumeDeployPayload() {
+	kc.log.Info("Started consuming DeployPayload")
+
+	for {
+		msg, err := kc.consumer.ReadMessage(-1)
+		if err != nil {
+			kc.log.Error("Error reading from topic DeployPayload:", err)
+			continue
+		}
+
+		kc.log.Info("New message from topic DeployPayload")
+
+		native, _, err := kc.codec.NativeFromTextual(msg.Value)
+		if err != nil {
+			kc.log.Error("Incorrect message while handling DeployPayload:", string(msg.Value), err)
+			kc.commitMessage(msg)
+			continue
+		}
+
+		deployPayloadDTO := dto.MapNativeToDeployPayloadDTO(native)
+		canCommit, _ := kc.projectService.UpdateProjectUrlDeploy(context.Background(), deployPayloadDTO)
 		if canCommit {
 			kc.commitMessage(msg)
 		}

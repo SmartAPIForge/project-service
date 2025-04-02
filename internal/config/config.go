@@ -76,11 +76,11 @@ func getEnvAsDuration(key string, defaultValue time.Duration) time.Duration {
 }
 
 func buildMongoURL() string {
-	user := getEnv("MONGO_USER", "root")
-	password := getEnv("MONGO_PASSWORD", "password")
+	//user := getEnv("MONGO_USERNAME", "root")
+	//password := getEnv("MONGO_PASSWORD", "password")
 	db := getEnv("MONGO_DB", "project-service-db")
 	port := getEnv("MONGO_PORT", "27017")
 	host := getEnv("MONGO_HOST", "localhost")
 
-	return fmt.Sprintf("mongodb://%s:%s@%s:%s/%s?authSource=project-service-db", user, password, host, port, db)
+	return fmt.Sprintf("mongodb://%s:%s/%s", host, port, db)
 }

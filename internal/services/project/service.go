@@ -1,6 +1,7 @@
-package codegenservice
+package projectservice
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"project-service/internal/domain/models"
@@ -9,61 +10,124 @@ import (
 )
 
 type ProjectRepository interface {
+	GetAllUserProjects(ctx context.Context, owner string, page, limit int64) ([]*models.Project, error)
+	InitProject(ctx context.Context, composeId, owner, name string) (*models.Project, error)
+	UpdateProject(ctx context.Context, composeId string, data string) (*models.Project, error)
+	UpdateProjectStatus(ctx context.Context, string, status string) (*models.Project, error)
+	UpdateProjectUrlZip(ctx context.Context, composeId string, url string) (*models.Project, error)
+	UpdateProjectUrlDeploy(ctx context.Context, composeId string, url string) (*models.Project, error)
 }
 
 type ProjectService struct {
 	log               *slog.Logger
 	projectRepository ProjectRepository
+	projectUpdater    *ProjectUpdater
 }
 
 func NewProjectService(
 	log *slog.Logger,
 	projectRepository *project.ProjectRepository,
+	projectUpdater *ProjectUpdater,
 ) *ProjectService {
 	return &ProjectService{
 		log:               log,
 		projectRepository: projectRepository,
+		projectUpdater:    projectUpdater,
 	}
 }
 
-func (*ProjectService) GetUniqueUserProject(
+func (s *ProjectService) GetAllUserProjects(
+	ctx context.Context,
 	owner string,
-	name string,
-) (*models.Project, error) {
-	return nil, nil
-}
-
-func (*ProjectService) GetAllUserProjects(
-	owner string,
+	page, limit int64,
 ) ([]*models.Project, error) {
-	return nil, nil
+	projects, err := s.projectRepository.GetAllUserProjects(ctx, owner, page, limit)
+	if err != nil {
+		s.log.Error("ошибка при получении списка проектов", "error", err)
+		return nil, err
+	}
+
+	return projects, nil
 }
 
-func (*ProjectService) CreateNewProject(
+func (s *ProjectService) InitProject(
+	ctx context.Context,
 	owner string,
 	name string,
 ) (*models.Project, error) {
-	return nil, nil
+	composeId := toComposeId(owner, name)
+	projectEntity, err := s.projectRepository.InitProject(ctx, composeId, owner, name)
+	if err != nil {
+		s.log.Error("ошибка при инициализации проекта", "error", err)
+		return nil, err
+	}
+
+	return projectEntity, nil
 }
 
-func (*ProjectService) UpdateProject(
+func (s *ProjectService) UpdateProject(
+	ctx context.Context,
 	owner string,
 	name string,
-	data map[string]interface{},
+	data string,
 ) (*models.Project, error) {
-	return nil, nil
+	composeId := toComposeId(owner, name)
+	projectEntity, err := s.projectRepository.UpdateProject(ctx, composeId, data)
+	if err != nil {
+		s.log.Error("ошибка при обновлении проекта", "error", err)
+		return nil, err
+	}
+
+	return projectEntity, nil
 }
 
-func (*ProjectService) GetProjectStatus(
-	owner string,
-	name string,
-) (string, error) {
-	return "nil", nil
-}
-
-func (*ProjectService) UpdateProjectStatus(
+func (s *ProjectService) UpdateProjectStatus(
+	ctx context.Context,
 	dto dto.ProjectStatusDTO,
 ) (bool, error) {
-	fmt.Println(dto)
+	updProject, err := s.projectRepository.UpdateProjectStatus(ctx, dto.Id, dto.Status)
+	if err != nil {
+		s.log.Error("ошибка при обновлении статуса проекта", "error", err)
+		return false, err
+	}
+
+	s.projectUpdater.Publish(updProject)
+
 	return true, nil
+}
+
+func (s *ProjectService) UpdateProjectUrlZip(
+	ctx context.Context,
+	dto dto.NewZipDTO,
+) (bool, error) {
+	composeId := toComposeId(dto.Owner, dto.Name)
+	updProject, err := s.projectRepository.UpdateProjectUrlZip(ctx, composeId, dto.Url)
+	if err != nil {
+		s.log.Error("ошибка при обновлении url zip проекта", "error", err)
+		return false, err
+	}
+
+	s.projectUpdater.Publish(updProject)
+
+	return true, nil
+}
+
+func (s *ProjectService) UpdateProjectUrlDeploy(
+	ctx context.Context,
+	dto dto.DeployPayloadDTO,
+) (bool, error) {
+	composeId := toComposeId(dto.Owner, dto.Name)
+	updProject, err := s.projectRepository.UpdateProjectUrlDeploy(ctx, composeId, dto.Url)
+	if err != nil {
+		s.log.Error("ошибка при обновлении url zip проекта", "error", err)
+		return false, err
+	}
+
+	s.projectUpdater.Publish(updProject)
+
+	return true, nil
+}
+
+func toComposeId(owner, name string) string {
+	return fmt.Sprintf("%s_%s", owner, name)
 }

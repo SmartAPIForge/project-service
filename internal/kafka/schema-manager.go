@@ -12,6 +12,8 @@ import (
 // topic -> codec
 var schemasForThisService = map[string]*goavro.Codec{
 	"ProjectStatus": nil,
+	"NewZip":        nil,
+	"DeployPayload": nil,
 }
 
 type SchemaManager struct {
