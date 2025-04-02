@@ -29,7 +29,8 @@ func NewApp(
 	}
 
 	projectRepository := project.NewProjectRepository(mongoClient, cfg.MongoDB, "project")
-	projectService := projectservice.NewProjectService(log, projectRepository)
+	projectUpdater := projectservice.NewProjectUpdater()
+	projectService := projectservice.NewProjectService(log, projectRepository, projectUpdater)
 
 	schemaManager := kafka.NewSchemaManager(cfg)
 	for topic, codec := range schemaManager.Schemas {
@@ -57,6 +58,7 @@ func NewApp(
 		log,
 		projectService,
 		cfg.GRPC.Port,
+		projectUpdater,
 	)
 
 	return &App{

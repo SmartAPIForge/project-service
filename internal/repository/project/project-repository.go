@@ -3,40 +3,13 @@ package project
 import (
 	"context"
 	"errors"
-
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
+	"project-service/internal/domain/models"
+	"time"
 )
-
-// ProjectUniqueIdentifier представляет уникальный идентификатор проекта
-type ProjectUniqueIdentifier struct {
-	Owner string `bson:"owner"`
-	Name  string `bson:"name"`
-}
-
-// ProjectStatus представляет статус проекта
-type ProjectStatus int
-
-const (
-	NEW              ProjectStatus = iota
-	GENERATE_PENDING               = 2
-	GENERATE_SUCCESS               = 3
-	GENERATE_FAIL                  = 4
-	DEPLOY_PENDING                 = 5
-	DEPLOY_SUCCESS                 = 6
-	DEPLOY_FAIL                    = 7
-	RUNNING                        = 8
-	STOPPED                        = 9
-	FAILED                         = 10
-)
-
-// Project представляет структуру проекта в базе данных
-type Project struct {
-	ComposeID ProjectUniqueIdentifier `bson:"compose_id"`
-	Data      string                  `bson:"data,omitempty"`
-	Status    ProjectStatus           `bson:"status"`
-}
 
 type ProjectRepository struct {
 	collection *mongo.Collection
@@ -47,51 +20,21 @@ func NewProjectRepository(client *mongo.Client, dbName, collectionName string) *
 	return &ProjectRepository{collection: collection}
 }
 
-// CreateUniqueIndex создает уникальный индекс для поля compose_id
-func (r *ProjectRepository) CreateUniqueIndex(ctx context.Context) error {
-	_, err := r.collection.Indexes().CreateOne(
-		ctx,
-		mongo.IndexModel{
-			Keys: bson.D{
-				{Key: "compose_id.owner", Value: 1},
-				{Key: "compose_id.name", Value: 1},
-			},
-			Options: options.Index().SetUnique(true),
-		},
-	)
-	return err
-}
-
-// GetProjectByID получает проект по его уникальному идентификатору
-func (r *ProjectRepository) GetProjectByID(ctx context.Context, id ProjectUniqueIdentifier) (*Project, error) {
-	filter := bson.M{"compose_id": bson.M{"owner": id.Owner, "name": id.Name}}
-	var project Project
-	err := r.collection.FindOne(ctx, filter).Decode(&project)
-	if err != nil {
-		if errors.Is(err, mongo.ErrNoDocuments) {
-			return nil, nil // Проект не найден
-		}
-		return nil, err
-	}
-	return &project, nil
-}
-
-// GetAllUserProjects получает все проекты пользователя с пагинацией
-func (r *ProjectRepository) GetAllUserProjects(ctx context.Context, owner string, page, limit int64) ([]*Project, error) {
-	filter := bson.M{"compose_id.owner": owner}
-
-	options := options.Find().
+func (r *ProjectRepository) GetAllUserProjects(ctx context.Context, owner string, page, limit int64) ([]*models.Project, error) {
+	opts := options.Find().
 		SetSkip((page - 1) * limit).
 		SetLimit(limit).
-		SetSort(bson.M{"compose_id.name": 1})
+		SetSort(bson.M{"composeId": 1})
 
-	cursor, err := r.collection.Find(ctx, filter, options)
+	cursor, err := r.collection.Find(ctx, bson.M{"owner": owner}, opts)
 	if err != nil {
 		return nil, err
 	}
-	defer cursor.Close(ctx)
+	defer func(cursor *mongo.Cursor, ctx context.Context) {
+		_ = cursor.Close(ctx)
+	}(cursor, ctx)
 
-	var projects []*Project
+	var projects []*models.Project
 	if err := cursor.All(ctx, &projects); err != nil {
 		return nil, err
 	}
@@ -99,9 +42,8 @@ func (r *ProjectRepository) GetAllUserProjects(ctx context.Context, owner string
 	return projects, nil
 }
 
-// InitProject инициализирует новый проект
-func (r *ProjectRepository) InitProject(ctx context.Context, id ProjectUniqueIdentifier) (*Project, error) {
-	existingProject, err := r.GetProjectByID(ctx, id)
+func (r *ProjectRepository) InitProject(ctx context.Context, composeId, owner, name string) (*models.Project, error) {
+	existingProject, err := r.getProjectByComposeId(ctx, composeId)
 	if err != nil {
 		return nil, err
 	}
@@ -109,10 +51,16 @@ func (r *ProjectRepository) InitProject(ctx context.Context, id ProjectUniqueIde
 		return nil, errors.New("проект с таким названием уже существует для данного пользователя")
 	}
 
-	project := &Project{
-		ComposeID: id,
-		Status:    NEW,
+	project := &models.Project{
+		ComposeId: composeId,
+		Owner:     owner,
+		Name:      name,
 		Data:      "",
+		Status:    "NEW",
+		UrlZip:    "",
+		UrlDeploy: "",
+		UpdatedAt: primitive.NewDateTimeFromTime(time.Now()),
+		CreatedAt: primitive.NewDateTimeFromTime(time.Now()),
 	}
 
 	_, err = r.collection.InsertOne(ctx, project)
@@ -123,10 +71,8 @@ func (r *ProjectRepository) InitProject(ctx context.Context, id ProjectUniqueIde
 	return project, nil
 }
 
-// UpdateProject обновляет данные проекта
-func (r *ProjectRepository) UpdateProject(ctx context.Context, id ProjectUniqueIdentifier, data string) (*Project, error) {
-	// Проверяем, что проект существует
-	existingProject, err := r.GetProjectByID(ctx, id)
+func (r *ProjectRepository) UpdateProject(ctx context.Context, composeId string, data string) (*models.Project, error) {
+	existingProject, err := r.getProjectByComposeId(ctx, composeId)
 	if err != nil {
 		return nil, err
 	}
@@ -134,32 +80,66 @@ func (r *ProjectRepository) UpdateProject(ctx context.Context, id ProjectUniqueI
 		return nil, errors.New("проект не найден")
 	}
 
-	// Обновляем данные проекта
-	update := bson.M{
-		"$set": bson.M{
-			"data": data,
-		},
-	}
-
-	filter := bson.M{"compose_id": bson.M{"owner": id.Owner, "name": id.Name}}
-	_, err = r.collection.UpdateOne(ctx, filter, update)
+	update := bson.M{"$set": bson.M{
+		"data":      data,
+		"updatedAt": primitive.NewDateTimeFromTime(time.Now()),
+	}}
+	_, err = r.collection.UpdateOne(ctx, bson.M{"composeId": composeId}, update)
 	if err != nil {
 		return nil, err
 	}
 
-	// Получаем обновленный проект
-	return r.GetProjectByID(ctx, id)
+	return r.getProjectByComposeId(ctx, composeId)
 }
 
-// UpdateProjectStatus обновляет статус проекта
-func (r *ProjectRepository) UpdateProjectStatus(ctx context.Context, id ProjectUniqueIdentifier, status ProjectStatus) error {
-	filter := bson.M{"compose_id": bson.M{"owner": id.Owner, "name": id.Name}}
-	update := bson.M{
-		"$set": bson.M{
-			"status": status,
-		},
+func (r *ProjectRepository) UpdateProjectStatus(ctx context.Context, composeId string, status string) (*models.Project, error) {
+	opts := options.FindOneAndUpdate().SetReturnDocument(options.After)
+	update := bson.M{"$set": bson.M{"status": status}}
+
+	var updatedProject models.Project
+	err := r.collection.FindOneAndUpdate(ctx, bson.M{"composeId": composeId}, update, opts).Decode(&updatedProject)
+	if err != nil {
+		return nil, err
 	}
 
-	_, err := r.collection.UpdateOne(ctx, filter, update)
-	return err
+	return &updatedProject, nil
+}
+
+func (r *ProjectRepository) UpdateProjectUrlZip(ctx context.Context, composeId string, url string) (*models.Project, error) {
+	opts := options.FindOneAndUpdate().SetReturnDocument(options.After)
+	update := bson.M{"$set": bson.M{"urlZip": url}}
+
+	var updatedProject models.Project
+	err := r.collection.FindOneAndUpdate(ctx, bson.M{"composeId": composeId}, update, opts).Decode(&updatedProject)
+	if err != nil {
+		return nil, err
+	}
+
+	return &updatedProject, nil
+}
+
+func (r *ProjectRepository) UpdateProjectUrlDeploy(ctx context.Context, composeId string, url string) (*models.Project, error) {
+	opts := options.FindOneAndUpdate().SetReturnDocument(options.After)
+	update := bson.M{"$set": bson.M{"urlDeploy": url}}
+
+	var updatedProject models.Project
+	err := r.collection.FindOneAndUpdate(ctx, bson.M{"composeId": composeId}, update, opts).Decode(&updatedProject)
+	if err != nil {
+		return nil, err
+	}
+
+	return &updatedProject, nil
+}
+
+func (r *ProjectRepository) getProjectByComposeId(ctx context.Context, composeId string) (*models.Project, error) {
+	var project *models.Project
+	err := r.collection.FindOne(ctx, bson.M{"composeId": composeId}).Decode(&project)
+	if err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	return project, nil
 }

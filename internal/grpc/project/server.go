@@ -7,15 +7,11 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"project-service/internal/domain/models"
+	projectservice "project-service/internal/services/project"
 	"strconv"
 )
 
 type ProjectService interface {
-	GetUniqueUserProject(
-		ctx context.Context,
-		owner string,
-		name string,
-	) (*models.Project, error)
 	GetAllUserProjects(
 		ctx context.Context,
 		owner string,
@@ -32,39 +28,23 @@ type ProjectService interface {
 		name string,
 		data string,
 	) (*models.Project, error)
-	GetProjectStatus(
-		ctx context.Context,
-		owner string,
-		name string,
-	) (string, error)
 }
 
 type ProjectServer struct {
 	projectProto.UnsafeProjectServiceServer
 	projectService ProjectService
+	projectUpdater *projectservice.ProjectUpdater
 }
 
 func RegisterProjectServer(
 	gRPCServer *grpc.Server,
 	project ProjectService,
+	projectUpdater *projectservice.ProjectUpdater,
 ) {
-	projectProto.RegisterProjectServiceServer(gRPCServer, &ProjectServer{projectService: project})
-}
-
-func (s *ProjectServer) GetUniqueUserProject(
-	ctx context.Context,
-	in *projectProto.GetUniqueUserProjectRequest,
-) (*projectProto.ProjectResponse, error) {
-	if in.ComposeId == nil {
-		return nil, status.Error(codes.InvalidArgument, "не указан идентификатор проекта")
-	}
-
-	project, err := s.projectService.GetUniqueUserProject(ctx, in.ComposeId.Owner, in.ComposeId.Name)
-	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
-	}
-
-	return projectToResponse(project)
+	projectProto.RegisterProjectServiceServer(
+		gRPCServer,
+		&ProjectServer{projectService: project, projectUpdater: projectUpdater},
+	)
 }
 
 func (s *ProjectServer) GetAllUserProjects(
@@ -111,6 +91,34 @@ func (s *ProjectServer) GetAllUserProjects(
 	}, nil
 }
 
+func (s *ProjectServer) StreamUserProjectsUpdates(
+	req *projectProto.Owner,
+	stream projectProto.ProjectService_StreamUserProjectsUpdatesServer,
+) error {
+	updates := s.projectUpdater.Subscribe()
+
+	for {
+		select {
+		case project, ok := <-updates:
+			if !ok {
+				return status.Error(codes.Internal, "project updates channel closed")
+			}
+
+			if project.Owner != req.Owner {
+				continue
+			}
+
+			projectResponse, _ := projectToResponse(project)
+			if err := stream.Send(projectResponse); err != nil {
+				return err
+			}
+
+		case <-stream.Context().Done():
+			return stream.Context().Err()
+		}
+	}
+}
+
 func (s *ProjectServer) InitProject(
 	ctx context.Context,
 	in *projectProto.InitProjectRequest,
@@ -143,14 +151,6 @@ func (s *ProjectServer) UpdateProject(
 	return projectToResponse(project)
 }
 
-func (s *ProjectServer) WatchProjectStatus(
-	req *projectProto.ProjectUniqueIdentifier,
-	stream projectProto.ProjectService_WatchProjectStatusServer,
-) error {
-	// TODO
-	return status.Error(codes.Unimplemented, "метод еще не реализован")
-}
-
 func projectToResponse(project *models.Project) (*projectProto.ProjectResponse, error) {
 	if project == nil {
 		return nil, status.Error(codes.NotFound, "проект не найден")
@@ -161,6 +161,13 @@ func projectToResponse(project *models.Project) (*projectProto.ProjectResponse, 
 			Owner: project.Owner,
 			Name:  project.Name,
 		},
-		Data: project.Data,
+		Info: &projectProto.ProjectInfo{
+			Data:      project.Data,
+			Status:    project.Status,
+			UrlZip:    project.UrlZip,
+			UrlDeploy: project.UrlDeploy,
+			CreatedAt: project.CreatedAt.Time().Unix(),
+			UpdatedAt: project.UpdatedAt.Time().Unix(),
+		},
 	}, nil
 }
