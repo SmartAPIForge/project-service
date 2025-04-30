@@ -1,6 +1,6 @@
 # project-service
 
-This service provides api for operations with user's projects
+This service provides api fo user's projects management
 
 ### Get prepared:
 
